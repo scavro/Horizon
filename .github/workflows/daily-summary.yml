@@ -1,0 +1,109 @@
+name: Daily Horizon Summary
+
+on:
+  schedule:
+    # Se ejecuta todos los días a las 07:00 UTC (08:00 CET / 09:00 CEST en España)
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+    inputs:
+      hours:
+        description: 'Ventana de tiempo en horas para buscar noticias'
+        required: false
+        default: '24'
+
+concurrency:
+  group: daily-horizon-summary
+  cancel-in-progress: false
+
+jobs:
+  daily-summary:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.26"
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Restore historical summaries from gh-pages
+        run: |
+          mkdir -p data/summaries
+          if git fetch origin gh-pages 2>/dev/null; then
+            mkdir -p /tmp/gh-pages-posts
+            git archive origin/gh-pages _posts 2>/dev/null | tar -x -C /tmp/gh-pages-posts || true
+            for f in /tmp/gh-pages-posts/_posts/*-summary-*.md; do
+              [ -e "$f" ] || continue
+              base=$(basename "$f")
+              out="data/summaries/horizon-${base/-summary-/-}"
+              cp "$f" "$out"
+            done
+          fi
+
+      - name: Prepare GitHub Actions config and email subscribers
+        env:
+          EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+        run: |
+          cp data/config.github.json data/config.json
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          raw_recipients = os.environ.get("EMAIL_TO") or os.environ.get("EMAIL_ADDRESS") or ""
+          recipients = [
+              addr.strip()
+              for addr in raw_recipients.split(",")
+              if addr.strip() and "@" in addr
+          ]
+          sub_path = Path("data/subscribers.json")
+          if recipients:
+              sub_path.write_text(json.dumps(recipients, indent=2) + "\n", encoding="utf-8")
+              print(f"Configured {len(recipients)} email recipient(s) in data/subscribers.json")
+          elif not sub_path.exists():
+              sub_path.write_text("[]\n", encoding="utf-8")
+              print("Warning: Neither EMAIL_TO nor EMAIL_ADDRESS secret is set; subscribers list is empty.")
+          PY
+
+      - name: Run Horizon
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
+          RAW_EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HORIZON_WEBHOOK_URL: ${{ secrets.HORIZON_WEBHOOK_URL }}
+        run: |
+          export EMAIL_PASSWORD="${RAW_EMAIL_PASSWORD// /}"
+          uv run horizon --hours ${{ inputs.hours || '24' }}
+
+      - name: Set current date as environment variable
+        run: echo "DATE=$(date -u +'%Y-%m-%d')" >> $GITHUB_ENV
+
+      - name: Deploy to GitHub Pages
+        continue-on-error: true
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./docs
+          keep_files: true
+          commit_message: "📝 Daily Summary: ${{ env.DATE }}"
+          publish_branch: gh-pages
+          enable_jekyll: true

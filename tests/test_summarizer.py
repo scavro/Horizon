@@ -469,3 +469,32 @@ def test_generate_summary_preserves_normal_http_links():
     assert "[Important Item 1](https://example.com/items/1)" in result
     assert "[Discussion](https://example.com/discuss?id=1#comments)" in result
     assert 'href="https://docs.example.com/path?q=one&amp;lang=en"' in result
+
+
+def test_generate_summary_renders_spanish_labels():
+    summarizer = DailySummarizer(
+        profile_names={"tech-news": {"es": "Noticias de Tecnología e IA"}}
+    )
+    item = _make_item(1)
+    item.processing.artifacts["es"] = ContentArtifact(
+        language="es",
+        title="Noticia Importante 1",
+        blocks=[
+            ContentBlock(
+                id="summary",
+                title="Resumen",
+                content="Resumen de la noticia 1.",
+                primary=True,
+            )
+        ],
+    )
+
+    result = _run_async(
+        summarizer.generate_summary([item], "2026-04-25", 5, language="es")
+    )
+
+    assert "# Resumen Diario de Horizon - 2026-04-25" in result
+    assert "## Noticias de Tecnología e IA" in result
+    assert "### [Noticia Importante 1](https://example.com/items/1)" in result
+    assert "**Etiquetas**: `#AI`, `#News`" in result
+

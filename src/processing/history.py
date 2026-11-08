@@ -20,7 +20,7 @@ _ITEM = re.compile(
     r"^#{2,3} \[((?:\\.|[^\\\]])+)\]\((https?://\S+)\)[^\n]*\n",
     re.MULTILINE,
 )
-_TAGS = re.compile(r"^\*\*(?:Tags|标签)\*\*[:：]\s*(.*)$", re.MULTILINE)
+_TAGS = re.compile(r"^\*\*(?:Tags|标签|Etiquetas)\*\*[:：]\s*(.*)$", re.MULTILINE)
 _WORDS = re.compile(r"[a-z0-9]+(?:\.[a-z0-9]+)*[+#]*|[\u3400-\u9fff]+")
 _STOP_WORDS = set("a an and are as at be by for from in is it of on or the to was with".split())
 

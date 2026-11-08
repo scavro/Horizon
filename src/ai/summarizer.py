@@ -88,6 +88,26 @@ LABELS = {
             "3. 检查 AI 模型是否正常工作\n"
         ),
     },
+    "es": {
+        "header": "Resumen Diario de Horizon",
+        "source": "Fuente",
+        "background": "Contexto",
+        "discussion": "Discusión",
+        "references": "Referencias",
+        "tags": "Etiquetas",
+        "selected_items": "De {total} elementos analizados, se seleccionaron {selected} noticias relevantes",
+        "empty_analyzed": "Se analizaron {total} elementos, pero ninguno superó el umbral de relevancia.",
+        "empty_body": (
+            "No se encontraron novedades destacadas hoy. Esto puede deberse a:\n"
+            "- Un día tranquilo en las fuentes configuradas\n"
+            "- El umbral de puntuación de IA es demasiado alto\n"
+            "- Las fuentes de información necesitan ampliarse\n\n"
+            "Sugerencias:\n"
+            "1. Reducir el umbral (threshold) del perfil configurado\n"
+            "2. Añadir fuentes de información más diversas\n"
+            "3. Verificar que el modelo de IA funcione correctamente\n"
+        ),
+    },
 }
 
 
