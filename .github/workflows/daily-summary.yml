@@ -101,7 +101,7 @@ jobs:
           else:
               print(f"🔑 GOOGLE_API_KEY detectada (longitud: {len(key)} caracteres, prefijo: {key[:4]}...)")
               client = genai.Client(api_key=key)
-              for model_name in ("gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash"):
+              for model_name in ("gemini-3.8-flash", "gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash"):
                   try:
                       res = client.models.generate_content(model=model_name, contents="Respond with OK")
                       print(f"✅ Modelo {model_name} verificado correctamente: {(res.text or '').strip()[:30]}")

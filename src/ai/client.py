@@ -518,10 +518,14 @@ class GeminiClient(AIClient):
     """Client for Google Gemini models."""
 
     _FALLBACK_MODELS = (
+        "gemini-3.8-flash",
+        "gemini-3-flash-preview",
         "gemini-2.5-flash-lite",
+        "gemini-2.5-flash",
         "gemini-2.0-flash",
         "gemini-2.0-flash-lite",
     )
+    _SUGGESTED_MODEL_RE = re.compile(r"use models/([a-zA-Z0-9._-]+)")
 
     def __init__(self, config: AIConfig):
         """Initialize Gemini client.
@@ -544,6 +548,8 @@ class GeminiClient(AIClient):
     @staticmethod
     def _should_try_fallback_model(exc: Exception) -> bool:
         msg = str(exc).upper()
+        if "402" in msg or "PREPAYMENT CREDITS ARE DEPLETED" in msg:
+            return False
         return any(
             token in msg
             for token in ("429", "RESOURCE_EXHAUSTED", "404", "NOT_FOUND", "503", "UNAVAILABLE")
@@ -577,7 +583,9 @@ class GeminiClient(AIClient):
 
         last_exc: Optional[Exception] = None
         response = None
-        for idx, model_name in enumerate(candidate_models):
+        idx = 0
+        while idx < len(candidate_models):
+            model_name = candidate_models[idx]
             try:
                 response = await self.client.aio.models.generate_content(
                     model=model_name,
@@ -599,6 +607,11 @@ class GeminiClient(AIClient):
                 break
             except Exception as exc:
                 last_exc = exc
+                match = self._SUGGESTED_MODEL_RE.search(str(exc))
+                if match:
+                    suggested = match.group(1)
+                    if suggested not in candidate_models:
+                        candidate_models.insert(idx + 1, suggested)
                 if idx < len(candidate_models) - 1 and self._should_try_fallback_model(exc):
                     logger.warning(
                         "Gemini model %s failed (%s); trying fallback %s",
@@ -606,6 +619,7 @@ class GeminiClient(AIClient):
                         exc,
                         candidate_models[idx + 1],
                     )
+                    idx += 1
                     continue
                 raise
 
