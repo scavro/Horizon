@@ -47,24 +47,63 @@ class ContentAnalyzer:
         """
         return parse_json_response(response)
 
+    @staticmethod
+    def _is_fatal_provider_error(exc: Exception) -> bool:
+        msg = str(exc).upper()
+        return any(
+            token in msg
+            for token in (
+                "402",
+                "PREPAYMENT CREDITS ARE DEPLETED",
+                "API_KEY_INVALID",
+                "API KEY NOT VALID",
+                "401",
+                "UNAUTHENTICATED",
+            )
+        )
+
     async def analyze_batch(self, items: List[ContentItem]) -> List[ContentItem]:
         semaphore = asyncio.Semaphore(self.concurrency)
+        fatal_error: Optional[str] = None
 
         async def _process(item: ContentItem, index: int, progress_task) -> ContentItem:
+            nonlocal fatal_error
             async with semaphore:
+                if fatal_error is not None:
+                    if item.processing is None:
+                        profile = self.profiles.get(
+                            item.profile if isinstance(item.profile, str) and item.profile != "auto"
+                            else self.profiles.default_profile
+                        )
+                        from ..models import ClassificationResult, ProcessingResult
+                        item.processing = ProcessingResult(
+                            classification=ClassificationResult(
+                                profile=profile.id, method="source_override"
+                            )
+                        )
+                    item.processing.analysis = ContentAnalysis(
+                        score=None,
+                        reason=f"Analysis failed: {fatal_error}",
+                        summary=item.title,
+                    )
+                    progress.advance(progress_task)
+                    return item
+
                 try:
                     await self._analyze_item(item)
                 except AIProviderUnavailableError:
                     raise
                 except Exception as e:
                     logger.error("Error analyzing item %s: %s", item.id, e)
+                    if self._is_fatal_provider_error(e):
+                        fatal_error = str(e)
                     if item.processing:
                         item.processing.analysis = ContentAnalysis(
                             score=None,
                             reason=f"Analysis failed: {e}",
                             summary=item.title,
                         )
-                if self.throttle_sec > 0 and index < len(items) - 1:
+                if fatal_error is None and self.throttle_sec > 0 and index < len(items) - 1:
                     await asyncio.sleep(self.throttle_sec)
             progress.advance(progress_task)
             return item

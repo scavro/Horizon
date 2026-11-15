@@ -524,7 +524,7 @@ class DailySummarizer:
                 lines.append("")
                 lines.append(labels.get("analysis_error_detail", "Error details:"))
                 for err in analysis_errors[:3]:
-                    lines.append(f"- `{_escape_markdown(err)}`")
+                    lines.append(f"- {_escape_markdown(err)}")
             diagnostic_block = "\n".join(lines) + "\n\n"
 
         return (
