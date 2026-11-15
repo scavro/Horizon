@@ -41,7 +41,8 @@ _DEFAULT_API_KEY_ENVS = {
 
 
 def _resolve_api_key(config: AIConfig, *, fallback: Optional[str] = None) -> str:
-    api_key = os.getenv(config.api_key_env)
+    raw_key = os.getenv(config.api_key_env)
+    api_key = raw_key.strip().strip('"').strip("'") if raw_key else ""
     if api_key:
         return api_key
     if fallback is not None:
@@ -516,6 +517,12 @@ class AzureOpenAIClient(AIClient):
 class GeminiClient(AIClient):
     """Client for Google Gemini models."""
 
+    _FALLBACK_MODELS = (
+        "gemini-2.5-flash-lite",
+        "gemini-2.0-flash",
+        "gemini-2.0-flash-lite",
+    )
+
     def __init__(self, config: AIConfig):
         """Initialize Gemini client.
 
@@ -530,8 +537,17 @@ class GeminiClient(AIClient):
 
         self.client = genai.Client(api_key=api_key)
         self.model = config.model
+        self._active_model = config.model
         self.temperature = config.temperature
         self.max_tokens = config.max_tokens
+
+    @staticmethod
+    def _should_try_fallback_model(exc: Exception) -> bool:
+        msg = str(exc).upper()
+        return any(
+            token in msg
+            for token in ("429", "RESOURCE_EXHAUSTED", "404", "NOT_FOUND", "503", "UNAVAILABLE")
+        )
 
     async def complete(
         self,
@@ -554,16 +570,48 @@ class GeminiClient(AIClient):
         temperature = self.temperature if temperature is None else temperature
         max_tokens = self.max_tokens if max_tokens is None else max_tokens
 
-        response = await self.client.aio.models.generate_content(
-            model=self.model,
-            contents=user,
-            config=types.GenerateContentConfig(
-                system_instruction=system,
-                temperature=temperature,
-                max_output_tokens=max_tokens,
-                response_mime_type="application/json"
-            )
-        )
+        candidate_models = [self._active_model]
+        for fb in self._FALLBACK_MODELS:
+            if fb not in candidate_models:
+                candidate_models.append(fb)
+
+        last_exc: Optional[Exception] = None
+        response = None
+        for idx, model_name in enumerate(candidate_models):
+            try:
+                response = await self.client.aio.models.generate_content(
+                    model=model_name,
+                    contents=user,
+                    config=types.GenerateContentConfig(
+                        system_instruction=system,
+                        temperature=temperature,
+                        max_output_tokens=max_tokens,
+                        response_mime_type="application/json"
+                    )
+                )
+                if model_name != self._active_model:
+                    logger.warning(
+                        "Gemini switched active model from %s to %s after fallback",
+                        self._active_model,
+                        model_name,
+                    )
+                    self._active_model = model_name
+                break
+            except Exception as exc:
+                last_exc = exc
+                if idx < len(candidate_models) - 1 and self._should_try_fallback_model(exc):
+                    logger.warning(
+                        "Gemini model %s failed (%s); trying fallback %s",
+                        model_name,
+                        exc,
+                        candidate_models[idx + 1],
+                    )
+                    continue
+                raise
+
+        if response is None and last_exc is not None:
+            raise last_exc
+
         usage = getattr(response, "usage_metadata", None)
         if usage is not None:
             total = getattr(usage, "total_token_count", 0) or 0

@@ -290,9 +290,23 @@ class HorizonOrchestrator:
 
             # 4. Analyze with AI
             analyzed_items = await self.analyze_items(merged_items)
+            analysis_failed_count = 0
+            analysis_errors: List[str] = []
+            for item in analyzed_items:
+                analysis = item.processing.analysis if item.processing else None
+                if analysis and analysis.score is None:
+                    analysis_failed_count += 1
+                    reason = (analysis.reason or "").strip()
+                    if reason and reason not in analysis_errors:
+                        analysis_errors.append(reason)
             self.console.print(
                 f"{self.icons['ai']} Analyzed {len(analyzed_items)} items with AI\n"
             )
+            if analysis_failed_count > 0:
+                self.console.print(
+                    f"[yellow]{self.icons['warning']} AI analysis failed for "
+                    f"{analysis_failed_count}/{len(analyzed_items)} items[/yellow]\n"
+                )
 
             # 5. Filter, deduplicate, and balance the digest
             filtering_result = await self.select_digest_items(
@@ -328,7 +342,14 @@ class HorizonOrchestrator:
                     profile_names=self.profiles.names,
                     profile_order=self.config.digest.profile_order,
                 )
-                summary = await summarizer.generate_summary(language_items, today, len(all_items), language=lang)
+                summary = await summarizer.generate_summary(
+                    language_items,
+                    today,
+                    len(all_items),
+                    language=lang,
+                    analysis_failed_count=analysis_failed_count,
+                    analysis_errors=analysis_errors,
+                )
 
                 # Save to data/summaries/
                 summary_path = self.storage.save_daily_summary(today, summary, language=lang)
@@ -422,16 +443,36 @@ class HorizonOrchestrator:
             self.console.print(
                 f"[bold red]{self.icons['error']} Error: {e}[/bold red]"
             )
+            failure_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+            if self.email_manager and self.config.email and self.config.email.enabled:
+                try:
+                    subscribers = self.storage.load_subscribers()
+                    if subscribers:
+                        failure_md = (
+                            f"# Horizon Error - {failure_date}\n\n"
+                            "⚠️ **Se produjo un error durante la ejecución de Horizon:**\n\n"
+                            f"`{e}`\n"
+                        )
+                        self.email_manager.send_daily_summary(
+                            failure_md,
+                            f"Horizon Error - {failure_date}",
+                            subscribers,
+                        )
+                except Exception as email_err:
+                    self.console.print(
+                        f"[yellow]{self.icons['warning']} Failed to send failure email: {email_err}[/yellow]"
+                    )
 
             # Send webhook failure notification if configured
             if self.webhook_notifier:
                 await self.webhook_notifier.send_failure(
-                    date=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+                    date=failure_date,
                     error_message=str(e),
                 )
             if self.wechat_notifier:
                 await self.wechat_notifier.send_failure(
-                    date=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+                    date=failure_date,
                     error_message=str(e),
                 )
 

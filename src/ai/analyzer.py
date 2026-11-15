@@ -61,7 +61,7 @@ class ContentAnalyzer:
                     if item.processing:
                         item.processing.analysis = ContentAnalysis(
                             score=None,
-                            reason="Analysis failed",
+                            reason=f"Analysis failed: {e}",
                             summary=item.title,
                         )
                 if self.throttle_sec > 0 and index < len(items) - 1:
@@ -88,7 +88,8 @@ class ContentAnalyzer:
     @retry(
         retry=retry_if_exception_type(Exception) & retry_if_not_exception_type(AIProviderUnavailableError),
         stop=stop_after_attempt(3),
-        wait=wait_exponential(min=2, max=10)
+        wait=wait_exponential(min=2, max=15),
+        reraise=True,
     )
     async def _analyze_item(self, item: ContentItem) -> None:
         """Analyze a single content item.

@@ -67,6 +67,8 @@ LABELS = {
             "2. Adding more diverse information sources\n"
             "3. Checking if the AI model is working correctly\n"
         ),
+        "analysis_error_header": "⚠️ **AI Analysis Error:** {failed} of {total} items failed during AI analysis.",
+        "analysis_error_detail": "Error details:",
     },
     "zh": {
         "header": "Horizon 每日速递",
@@ -87,6 +89,8 @@ LABELS = {
             "2. 添加更多多样化的信息源\n"
             "3. 检查 AI 模型是否正常工作\n"
         ),
+        "analysis_error_header": "⚠️ **AI 分析错误：** 共 {total} 条内容中有 {failed} 条在 AI 分析阶段失败。",
+        "analysis_error_detail": "错误详情：",
     },
     "es": {
         "header": "Resumen Diario de Horizon",
@@ -107,6 +111,8 @@ LABELS = {
             "2. Añadir fuentes de información más diversas\n"
             "3. Verificar que el modelo de IA funcione correctamente\n"
         ),
+        "analysis_error_header": "⚠️ **Error en el análisis de IA:** Fallaron {failed} de {total} elementos al consultar el modelo de IA.",
+        "analysis_error_detail": "Detalle del error detectado:",
     },
 }
 
@@ -233,6 +239,9 @@ class DailySummarizer:
         date: str,
         total_fetched: int,
         language: str = "en",
+        *,
+        analysis_failed_count: int = 0,
+        analysis_errors: Optional[List[str]] = None,
     ) -> str:
         """Generate daily summary in Markdown format.
 
@@ -243,6 +252,8 @@ class DailySummarizer:
             date: Date string (YYYY-MM-DD)
             total_fetched: Total number of items fetched before filtering
             language: Output language, either "en" or "zh"
+            analysis_failed_count: Number of items that failed AI analysis
+            analysis_errors: Distinct error messages from failed AI analysis
 
         Returns:
             str: Markdown formatted summary
@@ -250,7 +261,13 @@ class DailySummarizer:
         labels = LABELS.get(language, LABELS["en"])
 
         if not items:
-            return self._generate_empty_summary(date, total_fetched, labels)
+            return self._generate_empty_summary(
+                date,
+                total_fetched,
+                labels,
+                analysis_failed_count=analysis_failed_count,
+                analysis_errors=analysis_errors,
+            )
 
         header = (
             f"# {labels['header']} - {date}\n\n"
@@ -485,10 +502,34 @@ class DailySummarizer:
 
         return "\n".join(lines) + "\n\n"
 
-    def _generate_empty_summary(self, date: str, total_fetched: int, labels: dict) -> str:
+    def _generate_empty_summary(
+        self,
+        date: str,
+        total_fetched: int,
+        labels: dict,
+        *,
+        analysis_failed_count: int = 0,
+        analysis_errors: Optional[List[str]] = None,
+    ) -> str:
         """Generate summary when no high-scoring items were found."""
+        diagnostic_block = ""
+        if analysis_failed_count > 0 and "analysis_error_header" in labels:
+            lines = [
+                labels["analysis_error_header"].format(
+                    failed=analysis_failed_count,
+                    total=total_fetched,
+                )
+            ]
+            if analysis_errors:
+                lines.append("")
+                lines.append(labels.get("analysis_error_detail", "Error details:"))
+                for err in analysis_errors[:3]:
+                    lines.append(f"- `{_escape_markdown(err)}`")
+            diagnostic_block = "\n".join(lines) + "\n\n"
+
         return (
             f"# {labels['header']} - {date}\n\n"
             f"> {labels['empty_analyzed'].format(total=total_fetched)}\n\n"
+            + diagnostic_block
             + labels["empty_body"]
         )

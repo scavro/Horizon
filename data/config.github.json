@@ -5,19 +5,19 @@
     "api_key_env": "GOOGLE_API_KEY",
     "temperature": 0.3,
     "max_tokens": 8192,
-    "throttle_sec": 1.0,
+    "throttle_sec": 4.0,
     "languages": [
       "es"
     ],
-    "analysis_concurrency": 3,
-    "enrichment_concurrency": 3
+    "analysis_concurrency": 1,
+    "enrichment_concurrency": 1
   },
   "processing": {
     "profiles_dir": "profiles",
     "default_profile": "tech-news",
     "profile_settings": {
       "tech-news": {
-        "threshold": 7.0,
+        "threshold": 6.0,
         "topic_dedup": true
       },
       "tech-blog": {
@@ -25,7 +25,7 @@
         "topic_dedup": false
       },
       "ai-creator": {
-        "threshold": 7.0,
+        "threshold": 6.0,
         "topic_dedup": true
       }
     }

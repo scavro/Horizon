@@ -498,3 +498,21 @@ def test_generate_summary_renders_spanish_labels():
     assert "### [Noticia Importante 1](https://example.com/items/1)" in result
     assert "**Etiquetas**: `#AI`, `#News`" in result
 
+
+def test_generate_empty_summary_includes_analysis_failure_details():
+    summarizer = DailySummarizer()
+
+    result = _run_async(
+        summarizer.generate_summary(
+            [],
+            "2026-11-15",
+            71,
+            language="es",
+            analysis_failed_count=71,
+            analysis_errors=["Analysis failed: 429 RESOURCE_EXHAUSTED"],
+        )
+    )
+
+    assert "Fallaron 71 de 71 elementos al consultar el modelo de IA" in result
+    assert "429 RESOURCE\\_EXHAUSTED" in result
+
