@@ -544,7 +544,6 @@ class GeminiClient(AIClient):
         self._active_model = config.model
         self.temperature = config.temperature
         self.max_tokens = config.max_tokens
-        self._supports_thinking_config = True
 
     @staticmethod
     def _should_try_fallback_model(exc: Exception) -> bool:
@@ -555,29 +554,6 @@ class GeminiClient(AIClient):
             token in msg
             for token in ("429", "RESOURCE_EXHAUSTED", "404", "NOT_FOUND", "503", "UNAVAILABLE")
         )
-
-    def _build_generate_config(
-        self,
-        model_name: str,
-        system: str,
-        temperature: float,
-        max_tokens: int,
-    ) -> types.GenerateContentConfig:
-        kwargs: Dict[str, Any] = {
-            "system_instruction": system,
-            "temperature": temperature,
-            "max_output_tokens": max_tokens,
-            "response_mime_type": "application/json",
-        }
-        if self._supports_thinking_config and hasattr(types, "ThinkingConfig"):
-            lower_model = model_name.lower()
-            if "gemini-3" in lower_model and hasattr(types, "ThinkingLevel"):
-                kwargs["thinking_config"] = types.ThinkingConfig(
-                    thinking_level=types.ThinkingLevel.MINIMAL
-                )
-            elif "gemini-2.5" in lower_model:
-                kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
-        return types.GenerateContentConfig(**kwargs)
 
     async def complete(
         self,
@@ -614,9 +590,12 @@ class GeminiClient(AIClient):
                 response = await self.client.aio.models.generate_content(
                     model=model_name,
                     contents=user,
-                    config=self._build_generate_config(
-                        model_name, system, temperature, max_tokens
-                    ),
+                    config=types.GenerateContentConfig(
+                        system_instruction=system,
+                        temperature=temperature,
+                        max_output_tokens=max_tokens,
+                        response_mime_type="application/json"
+                    )
                 )
                 if model_name != self._active_model:
                     logger.warning(
@@ -627,12 +606,6 @@ class GeminiClient(AIClient):
                     self._active_model = model_name
                 break
             except Exception as exc:
-                if (
-                    self._supports_thinking_config
-                    and "thinking" in str(exc).lower()
-                ):
-                    self._supports_thinking_config = False
-                    continue
                 last_exc = exc
                 match = self._SUGGESTED_MODEL_RE.search(str(exc))
                 if match:
